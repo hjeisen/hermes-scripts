@@ -1,0 +1,39 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+# Agents service — supervised by s6-svscan.
+#
+# Starts Gmail Monitor, Mr. Moneyball, and Spy Film agents.
+# Keeps the service alive so s6-svscan tracks it.
+#
+# Runs as hermes via with-contenv; env is rehydrated.
+
+set -e
+
+cd /opt/data/agents
+
+# Load agent environment (API keys, etc.) if available.
+if [ -f /opt/data/.env ]; then
+    # shellcheck source=/dev/null
+    . /opt/data/.env
+fi
+
+# Ensure logs directory exists.
+mkdir -p /opt/data/cron/output
+
+# Start Gmail Monitor (continuous background polling, 600s interval)
+echo "[agents] Starting Gmail Monitor agent..." >&2
+nohup python3 /opt/data/home/hermes-agents/gmail-monitor.py >> /opt/data/cron/output/gmail_monitor.log 2>&1 &
+echo "[agents] Gmail Monitor PID: $!" >&2
+
+# Start Mr. Moneyball scheduler (weekly Monday 7 AM PDT)
+echo "[agents] Starting Mr. Moneyball scheduler..." >&2
+nohup python3 /opt/data/home/hermes-scripts/cron/mr_moneyball_cron.sh >> /opt/data/cron/output/mr_moneyball.log 2>&1 &
+echo "[agents] Mr. Moneyball PID: $!" >&2
+
+# Start Spy Film scheduler (weekly Thursday 7:00 AM PDT)
+echo "[agents] Starting Spy Film scheduler..." >&2
+nohup python3 /opt/data/home/hermes-scripts/cron/spy_film_cron.sh >> /opt/data/cron/output/spy_film.log 2>&1 &
+echo "[agents] Spy Film PID: $!" >&2
+
+# Keep the service alive so s6-svscan tracks it (agents are detached).
+wait
