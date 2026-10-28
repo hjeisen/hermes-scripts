@@ -54,7 +54,7 @@ SECTOR_SYMBOLS = {
     "data_centers": {
         "NVDA": "NVIDIA (AI/Compute)",
         "AMAT": "Applied Materials (Semiconductor equipment)",
-        "CRSP": "CrowdStrike (Cybersecurity)",
+        "CRWD": "CrowdStrike (Cybersecurity)",
         "WDC": "Western Digital (Storage)",
         "MRVL": "Marvell Technology (Semiconductors)",
         "EQIX": "Equinix (Data Centers)",
@@ -74,8 +74,6 @@ SECTOR_SYMBOLS = {
         "ED": "Exelon (Utility/Energy)",
         "SEDG": "SunPower (Solar)",
         "VST": "Vistra (Energy)",
-        "NESR": "NextEra Energy Services",
-        "MAC": "Mars Inc (Renewable Investment)",
         "TSLA": "Tesla (Energy Storage)",
     },
 }
