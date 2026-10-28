@@ -29,7 +29,7 @@ import json as json_module
 # ---------------------------------------------------------------------------
 
 # Discord delivery (via webhook)
-DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1561477251831304312/YF3QUO9-FcC0VpG7RjY54mjxdvTRMk__TDg1yiv7AMwAao4i_G1Sg3guxYUmeCfpii0t"
+DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1562297021052756018/ZdpN_hbS261Q210n2MP3zv5MM5S5X5lqbsEJa68kT7JC1lSyMbRm_CHVerHyRwFgKpDf"
 
 # Portfolio config
 INITIAL_PORTFOLIO = 10000.0
