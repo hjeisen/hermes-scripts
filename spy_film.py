@@ -127,11 +127,22 @@ def _soup(html):
 # ---------------------------------------------------------------------------
 
 def _justwatch_movie_links(query, category):
-    """Return a list of JustWatch detail URLs for spy movies/TV."""
+    """
+    Return a list of JustWatch detail URLs for spy-adjacent movies/TV.
+
+    Uses the 'new' listing page (recently added titles) rather than the
+    search URL, since the search URL does not filter by keyword.
+
+    Returns up to 16 URLs.
+    """
     urls = []
     try:
-        q = urllib.parse.quote(f"{query} spy")
-        url = f"https://www.justwatch.com/us/{category}?query={q}"
+        # Use the 'new' listing page to get recently added movies/TV
+        if category == "movies":
+            url = "https://www.justwatch.com/us/movies/new"
+        else:
+            url = "https://www.justwatch.com/us/tv-shows/new"
+
         html = fetch(url)
         soup = _soup(html)
         for a in soup.find_all("a", href=True):
@@ -142,13 +153,13 @@ def _justwatch_movie_links(query, category):
                 urls.append(href)
         return list(dict.fromkeys(urls))[:16]
     except Exception as e:
-        print(f"[WARN] JustWatch search failed ({category}): {e}")
+        print(f"[WARN] JustWatch 'new' listing failed ({category}): {e}")
         return urls
 
 
 def get_justwatch_detail(url):
     """
-    Extract title, synopsis, availability, and rating from a JustWatch
+    Extract title, synopsis, availability, rating, and genre tags from a JustWatch
     detail page (performed in two HTTP round-trips: search -> detail).
     """
     try:
@@ -178,16 +189,120 @@ def get_justwatch_detail(url):
         if m:
             rating = m.group(1)
 
+        # Genres, e.g. "Action Thriller, Mystery Thriller" or "Comedy, Fantasy, Live Action"
+        genres = _extract_genres(soup)
+
         return {
             "title": title,
             "channel": "JustWatch (Free/Subscription)",
             "synopsis": synopsis,
             "rating": rating,
             "type": "free_streaming" if availability == "free" else "subscription",
+            "genres": genres,
         }
     except Exception as e:
         print(f"[WARN] JustWatch detail failed for {url}: {e}")
         return None
+
+
+def _extract_genres(soup):
+    """
+    Extract genre tags from a JustWatch detail page.
+
+    Returns a list of genre strings (e.g. ['Action Thriller', 'Mystery Thriller',
+    'Crime', 'Drama'] or ['Comedy', 'Fantasy', 'Live Action']).
+    """
+    genres = []
+    try:
+        # Genre section (poster-detail-infos__value with "Genres" subheading)
+        for tag in soup.find_all('div', class_='poster-detail-infos__value'):
+            parent_h3 = tag.find_previous(['h3'])
+            if parent_h3 and 'genre' in parent_h3.get_text(' ', strip=True).lower():
+                genres.append(tag.get_text(' ', strip=True))
+
+        # Detail Infos link genres (Action Thriller, Mystery & Thriller, etc.)
+        for a in soup.find_all('a', class_='detail-infos__value detail-infos__link'):
+            g = a.get_text(' ', strip=True)
+            if g and g not in genres:
+                genres.append(g)
+    except Exception as e:
+        print(f"[WARN] Genres extraction failed: {e}")
+    return genres
+
+
+def _extract_genres(soup):
+    """
+    Extract genre tags from a JustWatch detail page.
+
+    Returns a list of genre strings (e.g. ['Action Thriller', 'Mystery Thriller',
+    'Crime', 'Drama'] or ['Comedy', 'Fantasy', 'Live Action']).
+    """
+    genres = []
+    try:
+        # Genre section (poster-detail-infos__value with "Genres" subheading)
+        for tag in soup.find_all('div', class_='poster-detail-infos__value'):
+            parent_h3 = tag.find_previous(['h3'])
+            if parent_h3 and 'genre' in parent_h3.get_text(' ', strip=True).lower():
+                genres.append(tag.get_text(' ', strip=True))
+
+        # Detail Infos link genres (Action Thriller, Mystery & Thriller, etc.)
+        for a in soup.find_all('a', class_='detail-infos__value detail-infos__link'):
+            g = a.get_text(' ', strip=True)
+            if g and g not in genres:
+                genres.append(g)
+    except Exception as e:
+        print(f"[WARN] Genres extraction failed: {e}")
+    return genres
+
+
+def _is_spy_content(genres, synopsis):
+    """
+    Filter: keep titles that are likely spy/espionage-related films (and
+    exclude anything that is clearly not a spy film).
+
+    The filter does BOTH:
+    1. Excludes clearly non-spy titles (only comedy/fantasy/musical/romance/horror)
+    2. Requires at least one spy-adjacent genre tag (thriller, crime, mystery)
+       OR explicit spy-related keywords in the synopsis.
+
+    Returns True if the title should be included, False otherwise.
+    """
+    if not genres and not synopsis:
+        return False
+
+    # Non-spy genres to exclude (only if the title has NO spy-adjacent genres)
+    anti_spy = ['comedy', 'fantasy', 'musical', 'romance', 'horror']
+
+    # Spy-related keyword check (more inclusive - includes thriller/crime/mystery)
+    spy_genres = [
+        'spy', 'espionage', 'intelligence', 'secret agent', 'MI6', 'CIA',
+        'KGB', 'undercover', 'covert', 'cold war', 'spymaster', 'mole',
+        'defection', 'double agent', 'spy thriller', 'spy fiction',
+        'thriller', 'crime', 'mystery', 'detective',
+    ]
+    has_spy_genre = any(any(kw in g.lower() for kw in spy_genres) for g in genres)
+
+    # If the title has ONLY non-spy genres (no spy genres), reject
+    if not has_spy_genre:
+        anti_spy = ['comedy', 'fantasy', 'musical', 'romance', 'horror']
+        has_anti_spy = any(any(kw in g.lower() for kw in anti_spy) for g in genres)
+        if has_anti_spy:
+            # All genres are non-spy - reject
+            return False
+
+    # No clear genre classification - check synopsis for spy keywords
+    has_spy_synopsis = False
+    if synopsis:
+        synopsis_lower = synopsis.lower()
+        spy_keywords = [
+            'spy', 'espionage', 'secret agent', 'MI6', 'CIA', 'KGB',
+            'undercover', 'covert', 'cold war', 'spymaster', 'mole',
+            'defection', 'double agent', 'spy thriller', 'spy fiction',
+            'assassin', 'assassination', 'intelligence agency',
+        ]
+        has_spy_synopsis = any(kw in synopsis_lower for kw in spy_keywords)
+
+    return has_spy_synopsis
 
 
 def _extract_justwatch_synopsis(text, soup):
@@ -267,10 +382,105 @@ def get_netflix_detail(url):
         print(f"[WARN] Netflix detail failed for {url}: {e}")
         return None
 
+_TUBI_CATEGORIES = [
+    "https://tubitv.com/category/action",
+    "https://tubitv.com/category/thriller",
+    "https://tubitv.com/category/crime",
+    "https://tubitv.com/category/mystery",
+]
 
-# ---------------------------------------------------------------------------
-# Content fetching
-# ---------------------------------------------------------------------------
+
+def _tubi_category_links():
+    """Return Tubi movie/series links from public category pages via Playwright."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        return []
+
+    links = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, executable_path="/opt/hermes/tools/chromium-1208/chrome-linux64/chrome")
+            for url in _TUBI_CATEGORIES:
+                try:
+                    page = browser.new_page()
+                    page.goto(url)
+                    page.wait_for_load_state("networkidle", timeout=30000)
+                    for _ in range(5):
+                        page.evaluate("window.scrollBy(0, 800)")
+                        page.wait_for_timeout(500)
+                    items = page.evaluate("""
+(() => {
+  const seen = new Set();
+  const out = [];
+  document.querySelectorAll('a').forEach(a => {
+    const href = a.getAttribute('href') || '';
+    const text = a.innerText && a.innerText.trim();
+    if ((href.startsWith('/movies/') || href.startsWith('/series/')) && text && text.length > 3 && text.length < 80) {
+      if (!seen.has(href)) {
+        seen.add(href);
+        out.push({href, text});
+      }
+    }
+  });
+  return JSON.stringify(out);
+})()
+""")
+                    page.close()
+                    for item in json.loads(items):
+                        links.append("https://tubitv.com" + item["href"])
+                except Exception as e:
+                    print(f"[WARN] Tubi category failed ({url}): {e}")
+            browser.close()
+    except Exception as e:
+        print(f"[WARN] Tubi scrape failed: {e}")
+    return list(dict.fromkeys(links))
+
+
+def get_tubi_detail(url):
+    """Fetch a Tubi detail page and extract title/synopsis/genre from JSON-LD."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        return None
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, executable_path="/opt/hermes/tools/chromium-1208/chrome-linux64/chrome")
+            page = browser.new_page()
+            page.goto(url)
+            page.wait_for_load_state("networkidle", timeout=30000)
+            data = page.evaluate("""
+(() => {
+  const jsonLd = document.querySelector('script[type="application/ld+json"]');
+  if (jsonLd) {
+    try { return JSON.parse(jsonLd.innerText); } catch(e) { return null; }
+  }
+  return null;
+})()
+""")
+            page.close()
+            browser.close()
+
+        if data:
+            graph = data.get("@graph", [])
+            for node in graph:
+                if node.get("@type") == "Movie":
+                    title = node.get("name")
+                    synopsis = node.get("description")
+                    genres = node.get("genre", [])
+                    is_free = node.get("isAccessibleForFree", False)
+                    return {
+                        "title": title,
+                        "channel": "Tubi (Free)" if is_free else "Tubi (Subscription)",
+                        "synopsis": synopsis[:300] if synopsis else None,
+                        "type": "free_streaming" if is_free else "subscription",
+                        "genres": genres if isinstance(genres, list) else [genres] if genres else [],
+                    }
+    except Exception as e:
+        print(f"[WARN] Tubi detail failed for {url}: {e}")
+    return None
+
 
 def fetch_streaming_content(query, category="movies"):
     """
@@ -278,25 +488,18 @@ def fetch_streaming_content(query, category="movies"):
     """
     results = []
 
-    # 1. JustWatch movies
-    for url in _justwatch_movie_links(query, "movies")[:14]:
-        info = get_justwatch_detail(url)
-        if info:
-            info["source"] = "justwatch.com"
-            results.append(info)
-
-    # 2. JustWatch TV shows
-    for url in _justwatch_movie_links(query, "tv")[:8]:
-        info = get_justwatch_detail(url)
-        if info:
-            info["source"] = "justwatch.com"
-            results.append(info)
-
-    # 3. Netflix spy genre
-    for url in _netflix_title_urls()[:10]:
+    # 1. Netflix spy genre — broader catalog
+    for url in _netflix_title_urls()[:60]:
         info = get_netflix_detail(url)
         if info:
             info["source"] = "netflix.com"
+            results.append(info)
+
+    # 2. Tubi public categories (action/thriller/crime/mystery)
+    for url in _tubi_category_links()[:40]:
+        info = get_tubi_detail(url)
+        if info:
+            info["source"] = "tubi.com"
             results.append(info)
 
     # Dedupe by title
@@ -307,6 +510,10 @@ def fetch_streaming_content(query, category="movies"):
         if key and key not in seen:
             seen.add(key)
             unique.append(item)
+
+    # Filter: keep only spy-relevant content
+    unique = [u for u in unique if _is_spy_content(u.get("genres", []), u.get("synopsis", ""))]
+
     return unique
 
 
